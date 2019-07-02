@@ -6,6 +6,8 @@ from datetime import timedelta
 import logging
 from google.cloud import storage
 
+from google.auth import compute_engine
+from google.auth.transport import requests
 from .object_store import ObjectStoreStorage
 from pypicloud.models import Package
 
@@ -85,13 +87,7 @@ class GoogleCloudStorage(ObjectStoreStorage):
         ) or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
         if not service_account_json_filename:
-            raise Exception(
-                "Neither the config setting "
-                "storage.service_account_json_filename, nor the "
-                "environment variable GOOGLE_APPLICATION_CREDENTIALS, was "
-                "found.  Pypicloud requires one of these in order to "
-                "properly authenticate against the GCS API."
-            )
+             return storage.Client()
 
         if not os.path.isfile(service_account_json_filename) and not cls.test:
             raise Exception(
@@ -143,7 +139,11 @@ class GoogleCloudStorage(ObjectStoreStorage):
     def _generate_url(self, package):
         """ Generate a signed url to the GCS file """
         blob = self._get_gcs_blob(package)
-        return blob.generate_signed_url(expiration=timedelta(seconds=self.expire_after))
+        # Workaround for https://github.com/googleapis/google-auth-library-python/issues/50
+        signing_credentials = compute_engine.IDTokenCredentials(requests.Request(), "")
+        return blob.generate_signed_url(expiration=timedelta(seconds=self.expire_after),
+                                        credentials=signing_credentials,
+                                        version="v4")
 
     def _get_gcs_blob(self, package):
         """ Get a GCS blob object for the specified package """
